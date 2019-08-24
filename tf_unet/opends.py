@@ -6,7 +6,7 @@ import numpy as np
 from tf_unet.image_util import BaseDataProvider
 
 class OpendsDataProvider(BaseDataProvider):
-	def __init__(self, search_path, a_min=None, a_max=None, data_suffix=".png", mask_suffix='_mask.tif', shuffle_data=True):
+	def __init__(self, search_path, a_min=None, a_max=None, data_suffix=".png", mask_suffix='_mask.png', shuffle_data=True):
 		super(OpendsDataProvider, self).__init__(a_min, a_max)
 		self.data_suffix = data_suffix
 		self.mask_suffix = mask_suffix
@@ -25,8 +25,8 @@ class OpendsDataProvider(BaseDataProvider):
 		label_path = image_path.replace(self.data_suffix, self.mask_suffix)
 		img = self._load_file(image_path)
 		mask = self._load_file(label_path)
-		self.channels = img.shape[-1]
-		self.n_class = 4
+		self.channels = 1 if len(img.shape) == 2 else img.shape[-1]
+		self.n_class = 2 if len(mask.shape) == 2 else mask.shape[-1]
 
 		print("Number of channels: %s"%self.channels)
 		print("Number of classes: %s"%self.n_class)
@@ -36,8 +36,14 @@ class OpendsDataProvider(BaseDataProvider):
 		return [name for name in all_files if self.data_suffix in name and not self.mask_suffix in name]
 
 	def _load_file(self, path):
+		
+		def bgr2rgb(im):
+			return cv2.cvtColor(im, cv2.COLOR_BGR2RGB)
+		
 		im = cv2.imread(path)
-		return im
+
+		# return bgr2rgb(im)
+		return cv2.imread(path)
 
 	def _cylce_file(self):
 		self.file_idx += 1
@@ -56,12 +62,14 @@ class OpendsDataProvider(BaseDataProvider):
 
 		return img, label
 
-	# def _process_data(self, data):
-	# 	return data/255.0
+	def _process_data(self, data):
+		return data/255.0
+
+	def _process_labels(self, label):
+		return label
 
 	def _load_data_and_label(self):
 		data, label = self._next_data()
-
 		train_data = self._process_data(data)
 		labels = self._process_labels(label)
 
@@ -70,7 +78,7 @@ class OpendsDataProvider(BaseDataProvider):
 		nx = train_data.shape[1]
 		ny = train_data.shape[0]
 
-		return train_data.reshape(1, ny, nx, self.channels), labels.reshape(1, ny, nx, self.channels)
+		return train_data.reshape(1, ny, nx, self.channels), labels.reshape(1, ny, nx, self.n_class)
 	
 	def __call__(self, n):
 		train_data, labels = self._load_data_and_label()
@@ -78,7 +86,7 @@ class OpendsDataProvider(BaseDataProvider):
 		ny = train_data.shape[2]
 
 		X = np.zeros((n, nx, ny, self.channels), dtype=np.float64)
-		Y = np.zeros((n, nx, ny, self.channels), dtype=np.uint8)
+		Y = np.zeros((n, nx, ny, self.n_class), dtype=np.uint8)
 
 		X[0] = train_data
 		Y[0] = labels
